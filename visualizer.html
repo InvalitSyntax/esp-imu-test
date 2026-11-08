@@ -162,24 +162,37 @@
     .raw-accel { color: #e3b341; }
     .raw-gyro { color: #bc8cff; }
 
-    .axes-legend {
+    /* CAD Navigation Gizmo (Слева снизу) */
+    .cad-gizmo-container {
       position: absolute;
       bottom: 20px;
       left: 20px;
-      background: rgba(22, 27, 34, 0.9);
+      background: rgba(22, 27, 34, 0.85);
       border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 12px 18px;
-      font-size: 0.82rem;
-      color: #8b949e;
+      border-radius: 12px;
+      padding: 8px 10px 6px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       backdrop-filter: blur(8px);
-      pointer-events: none;
-      line-height: 1.6;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      z-index: 6;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.2s, transform 0.15s;
     }
-    .axis-red { color: #f85149; font-weight: bold; }
-    .axis-green { color: #56d364; font-weight: bold; }
-    .axis-blue { color: #58a6ff; font-weight: bold; }
-    .axis-dim { color: #8b949e; font-style: italic; }
+    .cad-gizmo-container:hover {
+      border-color: #58a6ff;
+      transform: scale(1.03);
+    }
+    .cad-gizmo-label {
+      font-size: 0.70rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
 
     .help-box {
       position: absolute;
@@ -193,7 +206,11 @@
       color: #8b949e;
       backdrop-filter: blur(8px);
       pointer-events: none;
+      line-height: 1.5;
     }
+    .axis-red { color: #f85149; font-weight: bold; }
+    .axis-green { color: #56d364; font-weight: bold; }
+    .axis-blue { color: #58a6ff; font-weight: bold; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -253,20 +270,16 @@
       </div>
     </div>
 
-    <div class="axes-legend">
-      <strong>Оси датчика (локальные):</strong><br>
-      • <span class="axis-red">Красная (X):</span> Нос платы (к VIN)<br>
-      • <span class="axis-green">Зеленая (Y):</span> Вправо<br>
-      • <span class="axis-blue">Синяя (Z):</span> Вверх из платы<br>
-      <hr style="border: none; border-top: 1px solid #30363d; margin: 6px 0;">
-      <strong>Мировые оси визуализатора (глобальные):</strong><br>
-      • <span class="axis-dim">На сетке пола: статичный мировой компас (X - Север, Y - Восток, Z - Зенит)</span>
+    <!-- CAD Navigation Gizmo (Слева снизу) -->
+    <div class="cad-gizmo-container" id="cadGizmoContainer" title="Глобальные оси мира. Кликните для сброса вида">
+      <canvas id="cadGizmo" width="110" height="110"></canvas>
+      <div class="cad-gizmo-label">Оси мира (CAD)</div>
     </div>
 
     <div class="help-box">
       3D вращение: <strong>Кватернионы</strong> (без перескоков на 180°)<br>
       Зажми <strong>ЛКМ</strong> для вращения камеры | Колесико — зум<br>
-      Кнопка <strong>«Сброс вида»</strong> возвращает камеру в исходную точку
+      Оси датчика на плате: <span class="axis-red">X (Нос)</span>, <span class="axis-green">Y (Право)</span>, <span class="axis-blue">Z (Вверх)</span>
     </div>
   </div>
 
@@ -279,57 +292,6 @@
     const grid = new THREE.GridHelper(20, 20, 0x30363d, 0x161b22);
     grid.position.y = -2;
     scene.add(grid);
-
-    // ----------------------------------------------------
-    // ГЛОБАЛЬНЫЕ МИРОВЫЕ ОСИ (STATIC WORLD AXES & COMPASS)
-    // ----------------------------------------------------
-    const worldAxesGroup = new THREE.Group();
-    worldAxesGroup.position.y = -1.98; // Чуть выше сетки пола
-
-    // Функция создания стрелок для глобальных осей мира
-    function createWorldAxisArrow(dir, color, length = 3.2) {
-      const group = new THREE.Group();
-      const headLength = 0.45;
-      const shaftLength = length - headLength;
-      const shaft = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.02, 0.02, shaftLength, 12),
-        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.65 })
-      );
-      shaft.position.y = shaftLength / 2;
-      group.add(shaft);
-
-      const head = new THREE.Mesh(
-        new THREE.ConeGeometry(0.08, headLength, 16),
-        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.85 })
-      );
-      head.position.y = shaftLength + headLength / 2;
-      group.add(head);
-
-      group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-      return group;
-    }
-
-    // 1. Мировой X (Север / Нос вперед: -Z в Three.js)
-    const worldArrowX = createWorldAxisArrow(new THREE.Vector3(0, 0, -1), 0xf85149);
-    worldAxesGroup.add(worldArrowX);
-
-    // 2. Мировой Y (Восток / Право: +X в Three.js)
-    const worldArrowY = createWorldAxisArrow(new THREE.Vector3(1, 0, 0), 0x56d364);
-    worldAxesGroup.add(worldArrowY);
-
-    // 3. Мировой Z (Зенит / Вертикаль мира: +Y в Three.js)
-    const worldArrowZ = createWorldAxisArrow(new THREE.Vector3(0, 1, 0), 0x58a6ff, 2.5);
-    worldAxesGroup.add(worldArrowZ);
-
-    // Кольцо компаса на полу
-    const compassRing = new THREE.Mesh(
-      new THREE.RingGeometry(3.1, 3.16, 64),
-      new THREE.MeshBasicMaterial({ color: 0x30363d, side: THREE.DoubleSide })
-    );
-    compassRing.rotation.x = Math.PI / 2;
-    worldAxesGroup.add(compassRing);
-
-    scene.add(worldAxesGroup);
 
     // Освещение
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -507,6 +469,123 @@
       } else {
         modelGroup.add(pcbGroup);
       }
+    });
+
+    // ----------------------------------------------------
+    // CAD GIZMO (Оси в стиле CAD слева снизу)
+    // ----------------------------------------------------
+    const gizmoCanvas = document.getElementById('cadGizmo');
+    const gizmoCtx = gizmoCanvas.getContext('2d');
+    const GIZMO_SIZE = 110;
+    const GIZMO_CENTER = GIZMO_SIZE / 2;
+    const AXIS_LEN = 38;
+    const NEG_AXIS_LEN = 22;
+
+    function drawCadGizmo() {
+      gizmoCtx.clearRect(0, 0, GIZMO_SIZE, GIZMO_SIZE);
+
+      // Получаем поворот камеры
+      const invCamQuat = camera.quaternion.clone().invert();
+
+      // Три мировые оси:
+      // X мира (Нос вперед: -Z в Three.js)
+      // Y мира (Восток вправо: +X в Three.js)
+      // Z мира (Зенит вверх: +Y в Three.js)
+      const axes = [
+        { name: 'X', dir: new THREE.Vector3(0, 0, -1), color: '#f85149' },
+        { name: 'Y', dir: new THREE.Vector3(1, 0, 0),  color: '#56d364' },
+        { name: 'Z', dir: new THREE.Vector3(0, 1, 0),  color: '#58a6ff' }
+      ];
+
+      const projected = [];
+      for (const ax of axes) {
+        // Положительное направление
+        const v = ax.dir.clone().applyQuaternion(invCamQuat);
+        projected.push({
+          name: ax.name,
+          x: v.x,
+          y: v.y,
+          z: v.z,
+          color: ax.color,
+          isPositive: true
+        });
+
+        // Отрицательное направление
+        const vNeg = ax.dir.clone().negate().applyQuaternion(invCamQuat);
+        projected.push({
+          name: '-' + ax.name,
+          x: vNeg.x,
+          y: vNeg.y,
+          z: vNeg.z,
+          color: ax.color,
+          isPositive: false
+        });
+      }
+
+      // Сортировка по глубине (Z): дальние оси рисуются первыми
+      projected.sort((a, b) => a.z - b.z);
+
+      // Отрисовка осей
+      for (const item of projected) {
+        const len = item.isPositive ? AXIS_LEN : NEG_AXIS_LEN;
+        const px = GIZMO_CENTER + item.x * len;
+        const py = GIZMO_CENTER - item.y * len;
+
+        if (!item.isPositive) {
+          // Пунктир для отрицательной полуоси
+          gizmoCtx.beginPath();
+          gizmoCtx.setLineDash([2, 3]);
+          gizmoCtx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
+          gizmoCtx.lineWidth = 1.5;
+          gizmoCtx.moveTo(GIZMO_CENTER, GIZMO_CENTER);
+          gizmoCtx.lineTo(px, py);
+          gizmoCtx.stroke();
+          gizmoCtx.setLineDash([]);
+
+          gizmoCtx.beginPath();
+          gizmoCtx.arc(px, py, 3, 0, Math.PI * 2);
+          gizmoCtx.fillStyle = 'rgba(139, 148, 158, 0.35)';
+          gizmoCtx.fill();
+        } else {
+          // Сплошная линия для положительной оси
+          gizmoCtx.beginPath();
+          gizmoCtx.strokeStyle = item.color;
+          gizmoCtx.lineWidth = 2.5;
+          gizmoCtx.moveTo(GIZMO_CENTER, GIZMO_CENTER);
+          gizmoCtx.lineTo(px, py);
+          gizmoCtx.stroke();
+
+          // Кружок с меткой оси
+          const r = 8.5;
+          gizmoCtx.beginPath();
+          gizmoCtx.arc(px, py, r, 0, Math.PI * 2);
+          gizmoCtx.fillStyle = item.color;
+          gizmoCtx.fill();
+          gizmoCtx.strokeStyle = '#0d1117';
+          gizmoCtx.lineWidth = 1.5;
+          gizmoCtx.stroke();
+
+          gizmoCtx.fillStyle = '#ffffff';
+          gizmoCtx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, sans-serif';
+          gizmoCtx.textAlign = 'center';
+          gizmoCtx.textBaseline = 'middle';
+          gizmoCtx.fillText(item.name, px, py);
+        }
+      }
+
+      // Центральная точка
+      gizmoCtx.beginPath();
+      gizmoCtx.arc(GIZMO_CENTER, GIZMO_CENTER, 3.5, 0, Math.PI * 2);
+      gizmoCtx.fillStyle = '#8b949e';
+      gizmoCtx.fill();
+    }
+
+    // Сброс камеры по клику на CAD Gizmo
+    document.getElementById('cadGizmoContainer').addEventListener('click', () => {
+      camTheta = DEFAULT_CAM_THETA;
+      camPhi = DEFAULT_CAM_PHI;
+      camRadius = DEFAULT_CAM_RADIUS;
+      updateCameraPos();
     });
 
     // WebSerial
@@ -725,6 +804,9 @@
       modelGroup.quaternion.slerp(targetQuat, 0.35);
 
       renderer.render(scene, camera);
+
+      // Отрисовка CAD-виджета глобальных осей слева снизу
+      drawCadGizmo();
     }
     animate();
   </script>
