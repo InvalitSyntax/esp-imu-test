@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>IMU 3D Monitor & Raw Data | LSM6DS3</title>
+  <title>IMU 3D Monitor, Orientation & Position (INS) | LSM6DS3</title>
   <style>
     * {
       box-sizing: border-box;
@@ -54,15 +54,15 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
     button {
       background: #238636;
       color: #fff;
       border: 1px solid rgba(240, 246, 252, 0.1);
-      padding: 7px 14px;
+      padding: 7px 12px;
       border-radius: 6px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
@@ -90,9 +90,9 @@
       background: #21262d;
       color: #c9d1d9;
       border: 1px solid #363b42;
-      padding: 6px 12px;
+      padding: 6px 10px;
       border-radius: 6px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       cursor: pointer;
     }
     #viewport {
@@ -103,8 +103,8 @@
     }
     .overlay-left {
       position: absolute;
-      top: 20px;
-      left: 20px;
+      top: 15px;
+      left: 15px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -113,8 +113,8 @@
     }
     .overlay-right {
       position: absolute;
-      top: 20px;
-      right: 20px;
+      top: 15px;
+      right: 15px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -125,19 +125,19 @@
       background: rgba(22, 27, 34, 0.9);
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 10px 16px;
+      padding: 10px 14px;
       backdrop-filter: blur(10px);
       box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     }
     .card-title {
-      font-size: 0.72rem;
+      font-size: 0.70rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: #8b949e;
       margin-bottom: 4px;
     }
     .stat-value {
-      font-size: 1.5rem;
+      font-size: 1.4rem;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
     }
@@ -147,9 +147,9 @@
     
     .raw-table {
       font-family: monospace;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       border-collapse: collapse;
-      width: 200px;
+      width: 190px;
       margin-top: 4px;
     }
     .raw-table td {
@@ -165,8 +165,8 @@
     /* CAD Navigation Gizmo (Слева снизу) */
     .cad-gizmo-container {
       position: absolute;
-      bottom: 20px;
-      left: 20px;
+      bottom: 15px;
+      left: 15px;
       background: rgba(22, 27, 34, 0.85);
       border: 1px solid #30363d;
       border-radius: 12px;
@@ -186,7 +186,7 @@
       transform: scale(1.03);
     }
     .cad-gizmo-label {
-      font-size: 0.70rem;
+      font-size: 0.68rem;
       color: #8b949e;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -196,8 +196,8 @@
 
     .help-box {
       position: absolute;
-      bottom: 20px;
-      right: 20px;
+      bottom: 15px;
+      right: 15px;
       background: rgba(22, 27, 34, 0.88);
       border: 1px solid #30363d;
       border-radius: 8px;
@@ -217,7 +217,7 @@
 <body>
   <header>
     <div class="header-left">
-      <h1>LSM6DS3 Raw & 3D Monitor</h1>
+      <h1>LSM6DS3 6-DOF + INS Tracking</h1>
       <span id="statusBadge" class="badge offline">Отключен</span>
     </div>
     <div class="header-actions">
@@ -225,27 +225,39 @@
         <option value="pcb">Вид: Плата HW-661 (LSM6DS3)</option>
         <option value="drone">Вид: Квадрокоптер (Дрон)</option>
       </select>
-      <button id="resetCamBtn" class="btn-secondary" title="Вернуть исходный ракурс камеры">Сброс вида</button>
-      <button id="calibBtn" class="btn-warning" title="Аппаратная калибровка нуля гироскопа на 2 секунды">Калибровать гироскоп</button>
-      <button id="tareBtn" class="btn-secondary" title="Сбросить угол курса (Yaw) в текущем положении в 0°">Сбросить Yaw (0°)</button>
+      <button id="resetCamBtn" class="btn-secondary" title="Вернуть камеру в исходную точку">Сброс вида</button>
+      <button id="resetPosBtn" class="btn-secondary" title="Сбросить координаты перемещения (X=0, Y=0, Z=0)">Сброс позиции</button>
+      <button id="calibBtn" class="btn-warning" title="Аппаратная калибровка нуля">Калибровка</button>
+      <button id="tareBtn" class="btn-secondary" title="Сбросить угол Yaw в 0°">Сброс Yaw</button>
       <button id="connectBtn">Подключить ESP32</button>
     </div>
   </header>
 
   <div id="viewport">
-    <!-- Левая панель: Вычисленные углы -->
+    <!-- Левая панель: Углы ориентации и Позиция (INS) -->
     <div class="overlay-left">
       <div class="card" style="min-width: 170px;">
-        <div class="card-title">Roll (Крен)</div>
-        <div id="rollVal" class="stat-value val-roll">0.0°</div>
+        <div class="card-title">Ориентация (Углы)</div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <div><span style="font-size: 0.7rem; color: #8b949e;">Roll:</span> <span id="rollVal" class="val-roll" style="font-weight: bold;">0.0°</span></div>
+          <div><span style="font-size: 0.7rem; color: #8b949e;">Pitch:</span> <span id="pitchVal" class="val-pitch" style="font-weight: bold;">0.0°</span></div>
+        </div>
+        <div style="margin-top: 4px;">
+          <span style="font-size: 0.7rem; color: #8b949e;">Yaw (Курс):</span> <span id="yawVal" class="val-yaw" style="font-size: 1.3rem; font-weight: bold;">0.0°</span>
+        </div>
       </div>
+
+      <!-- Инерциальное перемещение (INS) -->
       <div class="card" style="min-width: 170px;">
-        <div class="card-title">Pitch (Тангаж)</div>
-        <div id="pitchVal" class="stat-value val-pitch">0.0°</div>
-      </div>
-      <div class="card" style="min-width: 170px;">
-        <div class="card-title">Yaw (Курс)</div>
-        <div id="yawVal" class="stat-value val-yaw">0.0°</div>
+        <div class="card-title" style="color: #2da44e;">Перемещение INS (см)</div>
+        <table class="raw-table">
+          <tr><td>X (Вперед/Назад):</td><td id="posXVal" style="color: #f85149;">0.0</td></tr>
+          <tr><td>Y (Влево/Вправо):</td><td id="posYVal" style="color: #56d364;">0.0</td></tr>
+          <tr><td>Z (Вверх/Вниз):</td><td id="posZVal" style="color: #58a6ff;">0.0</td></tr>
+        </table>
+        <div style="margin-top: 6px; font-size: 0.72rem; color: #8b949e;">
+          Скорость: <span id="speedVal" style="color: #e6edf3; font-weight: bold;">0.0</span> см/с
+        </div>
       </div>
     </div>
 
@@ -272,14 +284,14 @@
 
     <!-- CAD Navigation Gizmo (Слева снизу) -->
     <div class="cad-gizmo-container" id="cadGizmoContainer" title="Глобальные оси мира. Кликните для сброса вида">
-      <canvas id="cadGizmo" width="110" height="110"></canvas>
+      <canvas id="cadGizmo" width="105" height="105"></canvas>
       <div class="cad-gizmo-label">Оси мира (CAD)</div>
     </div>
 
     <div class="help-box">
-      3D вращение: <strong>Кватернионы</strong> (без перескоков на 180°)<br>
-      Зажми <strong>ЛКМ</strong> для вращения камеры | Колесико — зум<br>
-      Оси датчика на плате: <span class="axis-red">X (Нос)</span>, <span class="axis-green">Y (Право)</span>, <span class="axis-blue">Z (Вверх)</span>
+      3D перемещение: <strong>INS с ZUPT-фильтром</strong><br>
+      Подвигайте плату вперед-назад или вверх-вниз в руке!<br>
+      Оси на плате: <span class="axis-red">X (Нос)</span>, <span class="axis-green">Y (Право)</span>, <span class="axis-blue">Z (Вверх)</span>
     </div>
   </div>
 
@@ -289,7 +301,7 @@
     scene.background = new THREE.Color(0x0d1117);
 
     // Сетка пола
-    const grid = new THREE.GridHelper(20, 20, 0x30363d, 0x161b22);
+    const grid = new THREE.GridHelper(30, 30, 0x30363d, 0x161b22);
     grid.position.y = -2;
     scene.add(grid);
 
@@ -301,10 +313,9 @@
 
     const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
     
-    // Исходные координаты камеры (вид сзади-сверху)
     const DEFAULT_CAM_THETA = 0;
     const DEFAULT_CAM_PHI = 0.55;
-    const DEFAULT_CAM_RADIUS = 8;
+    const DEFAULT_CAM_RADIUS = 10;
 
     let camTheta = DEFAULT_CAM_THETA;
     let camPhi = DEFAULT_CAM_PHI;
@@ -341,7 +352,7 @@
       updateCameraPos();
     });
     container.addEventListener('wheel', e => {
-      camRadius = Math.max(3, Math.min(22, camRadius + e.deltaY * 0.005));
+      camRadius = Math.max(3, Math.min(30, camRadius + e.deltaY * 0.005));
       updateCameraPos();
       e.preventDefault();
     });
@@ -352,12 +363,45 @@
     });
 
     // ----------------------------------------------------
-    // Создаем корневую группу модели датчика
+    // Корневая группа модели (вращается и ПЕРЕМЕЩАЕТСЯ)
     // ----------------------------------------------------
     const modelGroup = new THREE.Group();
     scene.add(modelGroup);
 
-    // Функция создания 3D-стрелки локальной оси датчика
+    // Шлейф траектории движения (3D Motion Trail)
+    const MAX_TRAIL = 250;
+    const trailPositions = new Float32Array(MAX_TRAIL * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailMat = new THREE.LineBasicMaterial({
+      color: 0x58a6ff,
+      transparent: true,
+      opacity: 0.7,
+      linewidth: 2
+    });
+    const trailLine = new THREE.Line(trailGeo, trailMat);
+    scene.add(trailLine);
+
+    let trailIndex = 0;
+    let trailCount = 0;
+
+    function addTrailPoint(x, y, z) {
+      trailPositions[trailIndex * 3 + 0] = x;
+      trailPositions[trailIndex * 3 + 1] = y;
+      trailPositions[trailIndex * 3 + 2] = z;
+      trailIndex = (trailIndex + 1) % MAX_TRAIL;
+      if (trailCount < MAX_TRAIL) trailCount++;
+      trailGeo.attributes.position.needsUpdate = true;
+      trailGeo.setDrawRange(0, trailCount);
+    }
+
+    function clearTrail() {
+      trailIndex = 0;
+      trailCount = 0;
+      trailGeo.setDrawRange(0, 0);
+    }
+
+    // Стрелки осей датчика
     function createAxisArrow(dir, color) {
       const arrowGroup = new THREE.Group();
       const length = 2.4;
@@ -380,27 +424,22 @@
       return arrowGroup;
     }
 
-    // РАССТАВЛЯЕМ ОСИ СТРОГО ПО ФИЗИКЕ ПЛАТЫ:
-    // 1. Красная стрелка (X): ВПЕРЁД (к контактам VIN / -Z в Three.js)
     const arrowX = createAxisArrow(new THREE.Vector3(0, 0, -1), 0xf85149);
     modelGroup.add(arrowX);
 
-    // 2. Зеленая стрелка (Y): ВПРАВО (к монтажным отверстиям / +X в Three.js)
     const arrowY = createAxisArrow(new THREE.Vector3(1, 0, 0), 0x56d364);
     modelGroup.add(arrowY);
 
-    // 3. Синяя стрелка (Z): ВВЕРХ (из платы в потолок / +Y в Three.js)
     const arrowZ = createAxisArrow(new THREE.Vector3(0, 1, 0), 0x58a6ff);
     modelGroup.add(arrowZ);
 
-    // 1. Плата HW-661
+    // Модель платы HW-661
     const pcbGroup = new THREE.Group();
     {
       const pcbMat = new THREE.MeshStandardMaterial({ color: 0x3d1346, roughness: 0.4 });
       const chipMat = new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 0.3, metalness: 0.4 });
       const pinMat = new THREE.MeshStandardMaterial({ color: 0xe3b341, metalness: 0.9, roughness: 0.2 });
 
-      // Текстолит (X = 2.0 ширина, Z = 3.0 длина)
       const pcb = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 3.0), pcbMat);
       pcbGroup.add(pcb);
 
@@ -408,12 +447,10 @@
       chip.position.set(0, 0.08, 0);
       pcbGroup.add(chip);
 
-      // Белая точка 1-й ножки чипа (справа сверху: +X, -Z)
       const dot = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       dot.position.set(0.22, 0.1, -0.22);
       pcbGroup.add(dot);
 
-      // Контакты слева (-X)
       for (let z = -1.2; z <= 1.2; z += 0.4) {
         const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7), pinMat);
         pin.position.set(-0.85, -0.25, z);
@@ -421,7 +458,7 @@
       }
     }
 
-    // 2. Дрон
+    // Модель дрона
     const droneGroup = new THREE.Group();
     {
       const frameMat = new THREE.MeshStandardMaterial({ color: 0x1c2128, metalness: 0.7, roughness: 0.3 });
@@ -472,25 +509,19 @@
     });
 
     // ----------------------------------------------------
-    // CAD GIZMO (Оси в стиле CAD слева снизу)
+    // CAD GIZMO
     // ----------------------------------------------------
     const gizmoCanvas = document.getElementById('cadGizmo');
     const gizmoCtx = gizmoCanvas.getContext('2d');
-    const GIZMO_SIZE = 110;
+    const GIZMO_SIZE = 105;
     const GIZMO_CENTER = GIZMO_SIZE / 2;
-    const AXIS_LEN = 38;
-    const NEG_AXIS_LEN = 22;
+    const AXIS_LEN = 36;
+    const NEG_AXIS_LEN = 20;
 
     function drawCadGizmo() {
       gizmoCtx.clearRect(0, 0, GIZMO_SIZE, GIZMO_SIZE);
-
-      // Получаем поворот камеры
       const invCamQuat = camera.quaternion.clone().invert();
 
-      // Три мировые оси:
-      // X мира (Нос вперед: -Z в Three.js)
-      // Y мира (Восток вправо: +X в Three.js)
-      // Z мира (Зенит вверх: +Y в Three.js)
       const axes = [
         { name: 'X', dir: new THREE.Vector3(0, 0, -1), color: '#f85149' },
         { name: 'Y', dir: new THREE.Vector3(1, 0, 0),  color: '#56d364' },
@@ -499,40 +530,20 @@
 
       const projected = [];
       for (const ax of axes) {
-        // Положительное направление
         const v = ax.dir.clone().applyQuaternion(invCamQuat);
-        projected.push({
-          name: ax.name,
-          x: v.x,
-          y: v.y,
-          z: v.z,
-          color: ax.color,
-          isPositive: true
-        });
-
-        // Отрицательное направление
+        projected.push({ name: ax.name, x: v.x, y: v.y, z: v.z, color: ax.color, isPositive: true });
         const vNeg = ax.dir.clone().negate().applyQuaternion(invCamQuat);
-        projected.push({
-          name: '-' + ax.name,
-          x: vNeg.x,
-          y: vNeg.y,
-          z: vNeg.z,
-          color: ax.color,
-          isPositive: false
-        });
+        projected.push({ name: '-' + ax.name, x: vNeg.x, y: vNeg.y, z: vNeg.z, color: ax.color, isPositive: false });
       }
 
-      // Сортировка по глубине (Z): дальние оси рисуются первыми
       projected.sort((a, b) => a.z - b.z);
 
-      // Отрисовка осей
       for (const item of projected) {
         const len = item.isPositive ? AXIS_LEN : NEG_AXIS_LEN;
         const px = GIZMO_CENTER + item.x * len;
         const py = GIZMO_CENTER - item.y * len;
 
         if (!item.isPositive) {
-          // Пунктир для отрицательной полуоси
           gizmoCtx.beginPath();
           gizmoCtx.setLineDash([2, 3]);
           gizmoCtx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
@@ -543,11 +554,10 @@
           gizmoCtx.setLineDash([]);
 
           gizmoCtx.beginPath();
-          gizmoCtx.arc(px, py, 3, 0, Math.PI * 2);
+          gizmoCtx.arc(px, py, 2.5, 0, Math.PI * 2);
           gizmoCtx.fillStyle = 'rgba(139, 148, 158, 0.35)';
           gizmoCtx.fill();
         } else {
-          // Сплошная линия для положительной оси
           gizmoCtx.beginPath();
           gizmoCtx.strokeStyle = item.color;
           gizmoCtx.lineWidth = 2.5;
@@ -555,8 +565,7 @@
           gizmoCtx.lineTo(px, py);
           gizmoCtx.stroke();
 
-          // Кружок с меткой оси
-          const r = 8.5;
+          const r = 8;
           gizmoCtx.beginPath();
           gizmoCtx.arc(px, py, r, 0, Math.PI * 2);
           gizmoCtx.fillStyle = item.color;
@@ -566,21 +575,19 @@
           gizmoCtx.stroke();
 
           gizmoCtx.fillStyle = '#ffffff';
-          gizmoCtx.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, sans-serif';
+          gizmoCtx.font = 'bold 9px -apple-system, BlinkMacSystemFont, sans-serif';
           gizmoCtx.textAlign = 'center';
           gizmoCtx.textBaseline = 'middle';
           gizmoCtx.fillText(item.name, px, py);
         }
       }
 
-      // Центральная точка
       gizmoCtx.beginPath();
       gizmoCtx.arc(GIZMO_CENTER, GIZMO_CENTER, 3.5, 0, Math.PI * 2);
       gizmoCtx.fillStyle = '#8b949e';
       gizmoCtx.fill();
     }
 
-    // Сброс камеры по клику на CAD Gizmo
     document.getElementById('cadGizmoContainer').addEventListener('click', () => {
       camTheta = DEFAULT_CAM_THETA;
       camPhi = DEFAULT_CAM_PHI;
@@ -588,11 +595,15 @@
       updateCameraPos();
     });
 
-    // WebSerial
+    // WebSerial & Переменные движения
     let port = null, reader = null, isReading = false;
     let targetRoll = 0, targetPitch = 0, targetYaw = 0;
     let curRoll = 0, curPitch = 0, curYaw = 0;
     let yawOffset = 0;
+
+    let targetPosX = 0, targetPosY = 0, targetPosZ = 0;
+    let curPosX = 0, curPosY = 0, curPosZ = 0;
+    let curVelX = 0, curVelY = 0, curVelZ = 0;
 
     const targetQuat = new THREE.Quaternion();
 
@@ -600,11 +611,17 @@
     const tareBtn = document.getElementById('tareBtn');
     const calibBtn = document.getElementById('calibBtn');
     const resetCamBtn = document.getElementById('resetCamBtn');
+    const resetPosBtn = document.getElementById('resetPosBtn');
     const statusBadge = document.getElementById('statusBadge');
     
     const rollEl = document.getElementById('rollVal');
     const pitchEl = document.getElementById('pitchVal');
     const yawEl = document.getElementById('yawVal');
+
+    const posXEl = document.getElementById('posXVal');
+    const posYEl = document.getElementById('posYVal');
+    const posZEl = document.getElementById('posZVal');
+    const speedEl = document.getElementById('speedVal');
 
     const axEl = document.getElementById('axVal');
     const ayEl = document.getElementById('ayVal');
@@ -613,7 +630,6 @@
     const gyEl = document.getElementById('gyVal');
     const gzEl = document.getElementById('gzVal');
 
-    // Кнопка сброса вида камеры к исходному
     resetCamBtn.addEventListener('click', () => {
       camTheta = DEFAULT_CAM_THETA;
       camPhi = DEFAULT_CAM_PHI;
@@ -621,7 +637,19 @@
       updateCameraPos();
     });
 
-    // Кнопка калибровки нуля гироскопа (отправляет команду 'c' в Serial)
+    resetPosBtn.addEventListener('click', async () => {
+      targetPosX = 0; targetPosY = 0; targetPosZ = 0;
+      curPosX = 0; curPosY = 0; curPosZ = 0;
+      clearTrail();
+      if (port && port.writable) {
+        try {
+          const writer = port.writable.getWriter();
+          await writer.write(new TextEncoder().encode('r'));
+          writer.releaseLock();
+        } catch (e) {}
+      }
+    });
+
     calibBtn.addEventListener('click', async () => {
       if (port && port.writable) {
         try {
@@ -635,11 +663,10 @@
           statusBadge.classList.remove('offline');
           statusBadge.style.background = '#d29922';
 
-          // Страховочный сброс кнопки, если ответ не пришел
           setTimeout(() => {
             if (calibBtn.disabled) {
               calibBtn.disabled = false;
-              calibBtn.textContent = 'Калибровать гироскоп';
+              calibBtn.textContent = 'Калибровка';
               statusBadge.textContent = 'В эфире (115200)';
               statusBadge.style.background = '';
             }
@@ -652,7 +679,6 @@
       }
     });
 
-    // Кнопка сброса угла Yaw в 0° в текущем положении (отправляет 't')
     tareBtn.addEventListener('click', async () => {
       yawOffset = curYaw;
       if (port && port.writable) {
@@ -720,14 +746,13 @@
     function parseLine(str) {
       if (!str) return;
 
-      // Перехват сервисных сообщений калибровки от ESP32
       if (str.startsWith('[CALIB]')) {
         const msg = str.replace('[CALIB]', '').trim();
         statusBadge.textContent = msg;
         if (msg.includes('Успех')) {
           statusBadge.style.background = '#238636';
           calibBtn.disabled = false;
-          calibBtn.textContent = 'Калибровать гироскоп';
+          calibBtn.textContent = 'Калибровка';
           setTimeout(() => {
             if (isReading) {
               statusBadge.textContent = 'В эфире (115200)';
@@ -764,6 +789,12 @@
           case 'Roll':  targetRoll = v; break;
           case 'Pitch': targetPitch = v; break;
           case 'Yaw':   targetYaw = v; break;
+          case 'PX': targetPosX = v; break;
+          case 'PY': targetPosY = v; break;
+          case 'PZ': targetPosZ = v; break;
+          case 'VX': curVelX = v; break;
+          case 'VY': curVelY = v; break;
+          case 'VZ': curVelZ = v; break;
           case 'AX': axEl.textContent = v.toFixed(2); break;
           case 'AY': ayEl.textContent = v.toFixed(2); break;
           case 'AZ': azEl.textContent = v.toFixed(2); break;
@@ -774,9 +805,6 @@
       }
 
       if (hasQuat) {
-        // Преобразуем кватернион (q0, q1, q2, q3) в систему координат Three.js:
-        // Three.js: X=Right, Y=Up, Z=Back
-        // Координаты фильтра: 1=Pitch(X-rot), 2=Roll(Z-rot), 3=Yaw(Y-rot)
         targetQuat.set(q1, q3, -q2, q0);
       }
     }
@@ -795,10 +823,12 @@
       return a;
     }
 
+    let frameCount = 0;
+
     function animate() {
       requestAnimationFrame(animate);
 
-      // Плавное обновление цифровых индикаторов
+      // Плавное обновление углов
       curRoll += shortestAngleDiff(targetRoll, curRoll) * 0.4;
       curPitch += shortestAngleDiff(targetPitch, curPitch) * 0.4;
       curYaw += shortestAngleDiff(targetYaw, curYaw) * 0.4;
@@ -811,12 +841,36 @@
       pitchEl.textContent = displayPitch.toFixed(1) + '°';
       yawEl.textContent = displayYaw.toFixed(1) + '°';
 
-      // 3D Вращение через сферическую интерполяцию кватернионов (SLERP)
+      // Плавное обновление позиции INS (см):
+      curPosX += (targetPosX - curPosX) * 0.35;
+      curPosY += (targetPosY - curPosY) * 0.35;
+      curPosZ += (targetPosZ - curPosZ) * 0.35;
+
+      posXEl.textContent = curPosX.toFixed(1);
+      posYEl.textContent = curPosY.toFixed(1);
+      posZEl.textContent = curPosZ.toFixed(1);
+
+      const totalSpeed = Math.sqrt(curVelX * curVelX + curVelY * curVelY + curVelZ * curVelZ);
+      speedEl.textContent = totalSpeed.toFixed(1);
+
+      // Физическое перемещение 3D-модели в пространстве Three.js:
+      // X мира (Вперед) -> -Z в Three.js
+      // Y мира (Вправо) -> +X в Three.js
+      // Z мира (Вверх)   -> +Y в Three.js
+      const POS_SCALE = 0.08; // 10 см перемещения = 0.8 единиц сцены
+      modelGroup.position.set(curPosY * POS_SCALE, curPosZ * POS_SCALE, -curPosX * POS_SCALE);
+
+      // 3D шлейф траектории движения
+      if (frameCount++ % 3 === 0) {
+        if (totalSpeed > 1.5) {
+          addTrailPoint(modelGroup.position.x, modelGroup.position.y, modelGroup.position.z);
+        }
+      }
+
+      // 3D Вращение
       modelGroup.quaternion.slerp(targetQuat, 0.35);
 
       renderer.render(scene, camera);
-
-      // Отрисовка CAD-виджета глобальных осей слева снизу
       drawCadGizmo();
     }
     animate();
