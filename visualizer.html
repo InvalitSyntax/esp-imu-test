@@ -279,7 +279,7 @@
     <div class="help-box">
       3D вращение: <strong>Кватернионы</strong> (без перескоков на 180°)<br>
       Зажми <strong>ЛКМ</strong> для вращения камеры | Колесико — зум<br>
-      Оси датчика на плате: <span class="axis-red">X (Нос)</span>, <span class="axis-green">Y (Право)</span>, <span class="axis-blue">Z (Вверх)</span>
+      Оси датчика на плате: <span class="axis-red">X (Нос)</span>, <span class="axis-green">Y (Влево к пинам)</span>, <span class="axis-blue">Z (Вверх)</span>
     </div>
   </div>
 
@@ -386,7 +386,7 @@
     modelGroup.add(arrowX);
 
     // 2. Зеленая стрелка (Y): ВПРАВО (к монтажным отверстиям / +X в Three.js)
-    const arrowY = createAxisArrow(new THREE.Vector3(1, 0, 0), 0x56d364);
+    const arrowY = createAxisArrow(new THREE.Vector3(-1, 0, 0), 0x56d364);
     modelGroup.add(arrowY);
 
     // 3. Синяя стрелка (Z): ВВЕРХ (из платы в потолок / +Y в Three.js)
@@ -493,7 +493,7 @@
       // Z мира (Зенит вверх: +Y в Three.js)
       const axes = [
         { name: 'X', dir: new THREE.Vector3(0, 0, -1), color: '#f85149' },
-        { name: 'Y', dir: new THREE.Vector3(1, 0, 0),  color: '#56d364' },
+        { name: 'Y', dir: new THREE.Vector3(-1, 0, 0),  color: '#56d364' },
         { name: 'Z', dir: new THREE.Vector3(0, 1, 0),  color: '#58a6ff' }
       ];
 
