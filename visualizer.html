@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>IMU 3D Monitor & Raw Data | LSM6DS3</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    body {
+      background-color: #0d1117;
+      color: #e6edf3;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: rgba(22, 27, 34, 0.95);
+      backdrop-filter: blur(8px);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #30363d;
+      z-index: 10;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #58a6ff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      background: #238636;
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+    .badge.offline { background: #da3633; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    button {
+      background: #238636;
+      color: #fff;
+      border: 1px solid rgba(240, 246, 252, 0.1);
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover:not(:disabled) { background: #2ea043; }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    button.btn-secondary {
+      background: #21262d;
+      border-color: #363b42;
+      color: #c9d1d9;
+    }
+    button.btn-secondary:hover:not(:disabled) { background: #30363d; }
+    button.btn-warning {
+      background: #9e6a03;
+      border-color: #bb8009;
+      color: #fff;
+    }
+    button.btn-warning:hover:not(:disabled) { background: #b07807; }
+    button.btn-danger { background: #da3633; }
+    button.btn-danger:hover:not(:disabled) { background: #b62324; }
+    select {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #363b42;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    #viewport {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .overlay-left {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .overlay-right {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .card {
+      background: rgba(22, 27, 34, 0.9);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px 16px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .card-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8b949e;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .val-roll { color: #f85149; }
+    .val-pitch { color: #56d364; }
+    .val-yaw { color: #58a6ff; }
+    
+    .raw-table {
+      font-family: monospace;
+      font-size: 0.85rem;
+      border-collapse: collapse;
+      width: 200px;
+      margin-top: 4px;
+    }
+    .raw-table td {
+      padding: 2px 4px;
+    }
+    .raw-table td:last-child {
+      text-align: right;
+      font-weight: bold;
+    }
+    .raw-accel { color: #e3b341; }
+    .raw-gyro { color: #bc8cff; }
+
+    .axes-legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(22, 27, 34, 0.9);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 0.82rem;
+      color: #8b949e;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      line-height: 1.6;
+    }
+    .axis-red { color: #f85149; font-weight: bold; }
+    .axis-green { color: #56d364; font-weight: bold; }
+    .axis-blue { color: #58a6ff; font-weight: bold; }
+    .axis-dim { color: #8b949e; font-style: italic; }
+
+    .help-box {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(22, 27, 34, 0.88);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      color: #8b949e;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>LSM6DS3 Raw & 3D Monitor</h1>
+      <span id="statusBadge" class="badge offline">Отключен</span>
+    </div>
+    <div class="header-actions">
+      <select id="modelSelector">
+        <option value="pcb">Вид: Плата HW-661 (LSM6DS3)</option>
+        <option value="drone">Вид: Квадрокоптер (Дрон)</option>
+      </select>
+      <button id="resetCamBtn" class="btn-secondary" title="Вернуть исходный ракурс камеры">Сброс вида</button>
+      <button id="calibBtn" class="btn-warning" title="Аппаратная калибровка нуля гироскопа на 2 секунды">Калибровать гироскоп</button>
+      <button id="tareBtn" class="btn-secondary" title="Сбросить угол курса (Yaw) в текущем положении в 0°">Сбросить Yaw (0°)</button>
+      <button id="connectBtn">Подключить ESP32</button>
+    </div>
+  </header>
+
+  <div id="viewport">
+    <!-- Левая панель: Вычисленные углы -->
+    <div class="overlay-left">
+      <div class="card" style="min-width: 170px;">
+        <div class="card-title">Roll (Крен)</div>
+        <div id="rollVal" class="stat-value val-roll">0.0°</div>
+      </div>
+      <div class="card" style="min-width: 170px;">
+        <div class="card-title">Pitch (Тангаж)</div>
+        <div id="pitchVal" class="stat-value val-pitch">0.0°</div>
+      </div>
+      <div class="card" style="min-width: 170px;">
+        <div class="card-title">Yaw (Курс)</div>
+        <div id="yawVal" class="stat-value val-yaw">0.0°</div>
+      </div>
+    </div>
+
+    <!-- Правая панель: СЫРЫЕ ДАННЫЕ ПО ВСЕМ КАНАЛАМ -->
+    <div class="overlay-right">
+      <div class="card">
+        <div class="card-title raw-accel">Акселерометр (g)</div>
+        <table class="raw-table">
+          <tr><td>AX:</td><td id="axVal">0.00</td></tr>
+          <tr><td>AY:</td><td id="ayVal">0.00</td></tr>
+          <tr><td>AZ:</td><td id="azVal">0.00</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title raw-gyro">Гироскоп (°/с)</div>
+        <table class="raw-table">
+          <tr><td>GX:</td><td id="gxVal">0.0</td></tr>
+          <tr><td>GY:</td><td id="gyVal">0.0</td></tr>
+          <tr><td>GZ:</td><td id="gzVal">0.0</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="axes-legend">
+      <strong>Оси датчика (локальные):</strong><br>
+      • <span class="axis-red">Красная (X):</span> Нос платы (к VIN)<br>
+      • <span class="axis-green">Зеленая (Y):</span> Вправо<br>
+      • <span class="axis-blue">Синяя (Z):</span> Вверх из платы<br>
+      <hr style="border: none; border-top: 1px solid #30363d; margin: 6px 0;">
+      <strong>Мировые оси визуализатора (глобальные):</strong><br>
+      • <span class="axis-dim">На сетке пола: статичный мировой компас (X - Север, Y - Восток, Z - Зенит)</span>
+    </div>
+
+    <div class="help-box">
+      3D вращение: <strong>Кватернионы</strong> (без перескоков на 180°)<br>
+      Зажми <strong>ЛКМ</strong> для вращения камеры | Колесико — зум<br>
+      Кнопка <strong>«Сброс вида»</strong> возвращает камеру в исходную точку
+    </div>
+  </div>
+
+  <script>
+    const container = document.getElementById('viewport');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d1117);
+
+    // Сетка пола
+    const grid = new THREE.GridHelper(20, 20, 0x30363d, 0x161b22);
+    grid.position.y = -2;
+    scene.add(grid);
+
+    // ----------------------------------------------------
+    // ГЛОБАЛЬНЫЕ МИРОВЫЕ ОСИ (STATIC WORLD AXES & COMPASS)
+    // ----------------------------------------------------
+    const worldAxesGroup = new THREE.Group();
+    worldAxesGroup.position.y = -1.98; // Чуть выше сетки пола
+
+    // Функция создания стрелок для глобальных осей мира
+    function createWorldAxisArrow(dir, color, length = 3.2) {
+      const group = new THREE.Group();
+      const headLength = 0.45;
+      const shaftLength = length - headLength;
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.02, shaftLength, 12),
+        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.65 })
+      );
+      shaft.position.y = shaftLength / 2;
+      group.add(shaft);
+
+      const head = new THREE.Mesh(
+        new THREE.ConeGeometry(0.08, headLength, 16),
+        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.85 })
+      );
+      head.position.y = shaftLength + headLength / 2;
+      group.add(head);
+
+      group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      return group;
+    }
+
+    // 1. Мировой X (Север / Нос вперед: -Z в Three.js)
+    const worldArrowX = createWorldAxisArrow(new THREE.Vector3(0, 0, -1), 0xf85149);
+    worldAxesGroup.add(worldArrowX);
+
+    // 2. Мировой Y (Восток / Право: +X в Three.js)
+    const worldArrowY = createWorldAxisArrow(new THREE.Vector3(1, 0, 0), 0x56d364);
+    worldAxesGroup.add(worldArrowY);
+
+    // 3. Мировой Z (Зенит / Вертикаль мира: +Y в Three.js)
+    const worldArrowZ = createWorldAxisArrow(new THREE.Vector3(0, 1, 0), 0x58a6ff, 2.5);
+    worldAxesGroup.add(worldArrowZ);
+
+    // Кольцо компаса на полу
+    const compassRing = new THREE.Mesh(
+      new THREE.RingGeometry(3.1, 3.16, 64),
+      new THREE.MeshBasicMaterial({ color: 0x30363d, side: THREE.DoubleSide })
+    );
+    compassRing.rotation.x = Math.PI / 2;
+    worldAxesGroup.add(compassRing);
+
+    scene.add(worldAxesGroup);
+
+    // Освещение
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight1.position.set(6, 12, 8);
+    scene.add(dirLight1);
+
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    
+    // Исходные координаты камеры (вид сзади-сверху)
+    const DEFAULT_CAM_THETA = 0;
+    const DEFAULT_CAM_PHI = 0.55;
+    const DEFAULT_CAM_RADIUS = 8;
+
+    let camTheta = DEFAULT_CAM_THETA;
+    let camPhi = DEFAULT_CAM_PHI;
+    let camRadius = DEFAULT_CAM_RADIUS;
+
+    function updateCameraPos() {
+      camera.position.x = camRadius * Math.sin(camTheta) * Math.cos(camPhi);
+      camera.position.y = camRadius * Math.sin(camPhi);
+      camera.position.z = camRadius * Math.cos(camTheta) * Math.cos(camPhi);
+      camera.lookAt(0, 0, 0);
+    }
+    updateCameraPos();
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    let isMouseDown = false;
+    let prevMouseX = 0, prevMouseY = 0;
+    container.addEventListener('mousedown', e => {
+      isMouseDown = true;
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => isMouseDown = false);
+    window.addEventListener('mousemove', e => {
+      if (!isMouseDown) return;
+      camTheta -= (e.clientX - prevMouseX) * 0.007;
+      camPhi += (e.clientY - prevMouseY) * 0.007;
+      camPhi = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, camPhi));
+      prevMouseX = e.clientX;
+      prevMouseY = e.clientY;
+      updateCameraPos();
+    });
+    container.addEventListener('wheel', e => {
+      camRadius = Math.max(3, Math.min(22, camRadius + e.deltaY * 0.005));
+      updateCameraPos();
+      e.preventDefault();
+    });
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // ----------------------------------------------------
+    // Создаем корневую группу модели датчика
+    // ----------------------------------------------------
+    const modelGroup = new THREE.Group();
+    scene.add(modelGroup);
+
+    // Функция создания 3D-стрелки локальной оси датчика
+    function createAxisArrow(dir, color) {
+      const arrowGroup = new THREE.Group();
+      const length = 2.4;
+      const headLength = 0.5;
+      const shaftLength = length - headLength;
+      
+      const shaftGeo = new THREE.CylinderGeometry(0.035, 0.035, shaftLength, 12);
+      const headGeo = new THREE.ConeGeometry(0.12, headLength, 16);
+      const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.3, metalness: 0.5 });
+      
+      const shaft = new THREE.Mesh(shaftGeo, mat);
+      shaft.position.y = shaftLength / 2;
+      arrowGroup.add(shaft);
+
+      const head = new THREE.Mesh(headGeo, mat);
+      head.position.y = shaftLength + headLength / 2;
+      arrowGroup.add(head);
+
+      arrowGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      return arrowGroup;
+    }
+
+    // РАССТАВЛЯЕМ ОСИ СТРОГО ПО ФИЗИКЕ ПЛАТЫ:
+    // 1. Красная стрелка (X): ВПЕРЁД (к контактам VIN / -Z в Three.js)
+    const arrowX = createAxisArrow(new THREE.Vector3(0, 0, -1), 0xf85149);
+    modelGroup.add(arrowX);
+
+    // 2. Зеленая стрелка (Y): ВПРАВО (к монтажным отверстиям / +X в Three.js)
+    const arrowY = createAxisArrow(new THREE.Vector3(1, 0, 0), 0x56d364);
+    modelGroup.add(arrowY);
+
+    // 3. Синяя стрелка (Z): ВВЕРХ (из платы в потолок / +Y в Three.js)
+    const arrowZ = createAxisArrow(new THREE.Vector3(0, 1, 0), 0x58a6ff);
+    modelGroup.add(arrowZ);
+
+    // 1. Плата HW-661
+    const pcbGroup = new THREE.Group();
+    {
+      const pcbMat = new THREE.MeshStandardMaterial({ color: 0x3d1346, roughness: 0.4 });
+      const chipMat = new THREE.MeshStandardMaterial({ color: 0x161b22, roughness: 0.3, metalness: 0.4 });
+      const pinMat = new THREE.MeshStandardMaterial({ color: 0xe3b341, metalness: 0.9, roughness: 0.2 });
+
+      // Текстолит (X = 2.0 ширина, Z = 3.0 длина)
+      const pcb = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.08, 3.0), pcbMat);
+      pcbGroup.add(pcb);
+
+      const chip = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.7), chipMat);
+      chip.position.set(0, 0.08, 0);
+      pcbGroup.add(chip);
+
+      // Белая точка 1-й ножки чипа (справа сверху: +X, -Z)
+      const dot = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      dot.position.set(0.22, 0.1, -0.22);
+      pcbGroup.add(dot);
+
+      // Контакты слева (-X)
+      for (let z = -1.2; z <= 1.2; z += 0.4) {
+        const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7), pinMat);
+        pin.position.set(-0.85, -0.25, z);
+        pcbGroup.add(pin);
+      }
+    }
+
+    // 2. Дрон
+    const droneGroup = new THREE.Group();
+    {
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x1c2128, metalness: 0.7, roughness: 0.3 });
+      const motorMat = new THREE.MeshStandardMaterial({ color: 0xd29922, metalness: 0.9, roughness: 0.2 });
+      const propFrontMat = new THREE.MeshStandardMaterial({ color: 0xf85149, roughness: 0.3 });
+      const propRearMat  = new THREE.MeshStandardMaterial({ color: 0x58a6ff, roughness: 0.3 });
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.25, 2.0), frameMat);
+      droneGroup.add(body);
+
+      const arm1 = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.12, 0.14), frameMat);
+      arm1.rotation.y = Math.PI / 4;
+      droneGroup.add(arm1);
+
+      const arm2 = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.12, 0.14), frameMat);
+      arm2.rotation.y = -Math.PI / 4;
+      droneGroup.add(arm2);
+
+      const d = 1.8 * Math.SQRT1_2;
+      const motors = [
+        { x:  d, z: -d, front: true },
+        { x: -d, z: -d, front: true },
+        { x:  d, z:  d, front: false },
+        { x: -d, z:  d, front: false }
+      ];
+
+      motors.forEach(m => {
+        const mot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.35, 16), motorMat);
+        mot.position.set(m.x, 0.2, m.z);
+        droneGroup.add(mot);
+
+        const prop = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.02, 0.14), m.front ? propFrontMat : propRearMat);
+        prop.position.set(m.x, 0.4, m.z);
+        droneGroup.add(prop);
+      });
+    }
+
+    modelGroup.add(pcbGroup);
+
+    document.getElementById('modelSelector').addEventListener('change', e => {
+      modelGroup.remove(droneGroup);
+      modelGroup.remove(pcbGroup);
+      if (e.target.value === 'drone') {
+        modelGroup.add(droneGroup);
+      } else {
+        modelGroup.add(pcbGroup);
+      }
+    });
+
+    // WebSerial
+    let port = null, reader = null, isReading = false;
+    let targetRoll = 0, targetPitch = 0, targetYaw = 0;
+    let curRoll = 0, curPitch = 0, curYaw = 0;
+    let yawOffset = 0;
+
+    const targetQuat = new THREE.Quaternion();
+
+    const connectBtn = document.getElementById('connectBtn');
+    const tareBtn = document.getElementById('tareBtn');
+    const calibBtn = document.getElementById('calibBtn');
+    const resetCamBtn = document.getElementById('resetCamBtn');
+    const statusBadge = document.getElementById('statusBadge');
+    
+    const rollEl = document.getElementById('rollVal');
+    const pitchEl = document.getElementById('pitchVal');
+    const yawEl = document.getElementById('yawVal');
+
+    const axEl = document.getElementById('axVal');
+    const ayEl = document.getElementById('ayVal');
+    const azEl = document.getElementById('azVal');
+    const gxEl = document.getElementById('gxVal');
+    const gyEl = document.getElementById('gyVal');
+    const gzEl = document.getElementById('gzVal');
+
+    // Кнопка сброса вида камеры к исходному
+    resetCamBtn.addEventListener('click', () => {
+      camTheta = DEFAULT_CAM_THETA;
+      camPhi = DEFAULT_CAM_PHI;
+      camRadius = DEFAULT_CAM_RADIUS;
+      updateCameraPos();
+    });
+
+    // Кнопка калибровки нуля гироскопа (отправляет команду 'c' в Serial)
+    calibBtn.addEventListener('click', async () => {
+      if (port && port.writable) {
+        try {
+          const writer = port.writable.getWriter();
+          await writer.write(new TextEncoder().encode('c'));
+          writer.releaseLock();
+
+          calibBtn.disabled = true;
+          calibBtn.textContent = '⏳ Калибровка (не двигайте!)...';
+          statusBadge.textContent = 'Калибровка нуля...';
+          statusBadge.classList.remove('offline');
+          statusBadge.style.background = '#d29922';
+
+          setTimeout(() => {
+            calibBtn.disabled = false;
+            calibBtn.textContent = 'Калибровать гироскоп';
+            statusBadge.textContent = 'В эфире (115200)';
+            statusBadge.style.background = '';
+          }, 2600);
+        } catch (e) {
+          alert('Ошибка отправки: ' + e.message);
+        }
+      } else {
+        alert('Сначала нажмите «Подключить ESP32»!');
+      }
+    });
+
+    // Кнопка сброса угла Yaw в 0° в текущем положении (отправляет 't')
+    tareBtn.addEventListener('click', async () => {
+      yawOffset = curYaw;
+      if (port && port.writable) {
+        try {
+          const writer = port.writable.getWriter();
+          await writer.write(new TextEncoder().encode('t'));
+          writer.releaseLock();
+        } catch (e) {}
+      }
+    });
+
+    connectBtn.addEventListener('click', async () => {
+      if (!('serial' in navigator)) {
+        alert('WebSerial не поддерживается! Открой в Google Chrome или Microsoft Edge.');
+        return;
+      }
+      if (port) {
+        isReading = false;
+        try { if (reader) await reader.cancel(); } catch (e) {}
+        try { await port.close(); } catch (e) {}
+        port = null; reader = null;
+        connectBtn.textContent = 'Подключить ESP32';
+        connectBtn.classList.remove('btn-danger');
+        statusBadge.textContent = 'Отключен';
+        statusBadge.classList.add('offline');
+        statusBadge.style.background = '';
+        return;
+      }
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        connectBtn.textContent = 'Отключить';
+        connectBtn.classList.add('btn-danger');
+        statusBadge.textContent = 'В эфире (115200)';
+        statusBadge.classList.remove('offline');
+        statusBadge.style.background = '';
+        isReading = true;
+        readSerialStream();
+      } catch (err) {
+        alert('Ошибка порта: ' + err.message);
+      }
+    });
+
+    async function readSerialStream() {
+      const textDecoder = new TextDecoder();
+      let buffer = '';
+      try {
+        reader = port.readable.getReader();
+        while (isReading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            buffer += textDecoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) parseLine(line.trim());
+          }
+        }
+      } catch (err) {
+      } finally {
+        if (reader) { reader.releaseLock(); reader = null; }
+      }
+    }
+
+    function parseLine(str) {
+      if (!str) return;
+
+      // Перехват сервисных сообщений калибровки от ESP32
+      if (str.startsWith('[CALIB]')) {
+        const msg = str.replace('[CALIB]', '').trim();
+        statusBadge.textContent = msg;
+        if (msg.includes('Успех')) {
+          statusBadge.style.background = '#238636';
+        } else if (msg.includes('Движение')) {
+          statusBadge.style.background = '#da3633';
+        } else {
+          statusBadge.style.background = '#d29922';
+        }
+        return;
+      }
+
+      const parts = str.split(',');
+      let q0 = 1, q1 = 0, q2 = 0, q3 = 0;
+      let hasQuat = false;
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.startsWith('Q:')) {
+          q0 = parseFloat(part.substring(2));
+          q1 = parseFloat(parts[i+1]);
+          q2 = parseFloat(parts[i+2]);
+          q3 = parseFloat(parts[i+3]);
+          hasQuat = true;
+          i += 3;
+          continue;
+        }
+        const [key, val] = part.split(':');
+        if (!key || val === undefined) continue;
+        const v = parseFloat(val);
+        switch (key) {
+          case 'Roll':  targetRoll = v; break;
+          case 'Pitch': targetPitch = v; break;
+          case 'Yaw':   targetYaw = v; break;
+          case 'AX': axEl.textContent = v.toFixed(2); break;
+          case 'AY': ayEl.textContent = v.toFixed(2); break;
+          case 'AZ': azEl.textContent = v.toFixed(2); break;
+          case 'GX': gxEl.textContent = v.toFixed(1); break;
+          case 'GY': gyEl.textContent = v.toFixed(1); break;
+          case 'GZ': gzEl.textContent = v.toFixed(1); break;
+        }
+      }
+
+      if (hasQuat) {
+        // Преобразуем кватернион (q0, q1, q2, q3) в систему координат Three.js:
+        // Three.js: X=Right, Y=Up, Z=Back
+        // Координаты фильтра: 1=Pitch(X-rot), 2=Roll(Z-rot), 3=Yaw(Y-rot)
+        targetQuat.set(q1, q3, -q2, q0);
+      }
+    }
+
+    function shortestAngleDiff(target, cur) {
+      let diff = (target - cur) % 360;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      return diff;
+    }
+
+    function normalize180(ang) {
+      let a = ang % 360;
+      if (a > 180) a -= 360;
+      if (a < -180) a += 360;
+      return a;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Плавное обновление цифровых индикаторов
+      curRoll += shortestAngleDiff(targetRoll, curRoll) * 0.4;
+      curPitch += shortestAngleDiff(targetPitch, curPitch) * 0.4;
+      curYaw += shortestAngleDiff(targetYaw, curYaw) * 0.4;
+
+      const displayYaw = normalize180(curYaw - yawOffset);
+      const displayRoll = normalize180(curRoll);
+      const displayPitch = normalize180(curPitch);
+
+      rollEl.textContent = displayRoll.toFixed(1) + '°';
+      pitchEl.textContent = displayPitch.toFixed(1) + '°';
+      yawEl.textContent = displayYaw.toFixed(1) + '°';
+
+      // 3D Вращение через сферическую интерполяцию кватернионов (SLERP)
+      modelGroup.quaternion.slerp(targetQuat, 0.35);
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
