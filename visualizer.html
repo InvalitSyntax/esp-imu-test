@@ -630,17 +630,20 @@
           writer.releaseLock();
 
           calibBtn.disabled = true;
-          calibBtn.textContent = '⏳ Калибровка (не двигайте!)...';
+          calibBtn.textContent = '⏳ Калибровка...';
           statusBadge.textContent = 'Калибровка нуля...';
           statusBadge.classList.remove('offline');
           statusBadge.style.background = '#d29922';
 
+          // Страховочный сброс кнопки, если ответ не пришел
           setTimeout(() => {
-            calibBtn.disabled = false;
-            calibBtn.textContent = 'Калибровать гироскоп';
-            statusBadge.textContent = 'В эфире (115200)';
-            statusBadge.style.background = '';
-          }, 2600);
+            if (calibBtn.disabled) {
+              calibBtn.disabled = false;
+              calibBtn.textContent = 'Калибровать гироскоп';
+              statusBadge.textContent = 'В эфире (115200)';
+              statusBadge.style.background = '';
+            }
+          }, 3500);
         } catch (e) {
           alert('Ошибка отправки: ' + e.message);
         }
@@ -723,6 +726,14 @@
         statusBadge.textContent = msg;
         if (msg.includes('Успех')) {
           statusBadge.style.background = '#238636';
+          calibBtn.disabled = false;
+          calibBtn.textContent = 'Калибровать гироскоп';
+          setTimeout(() => {
+            if (isReading) {
+              statusBadge.textContent = 'В эфире (115200)';
+              statusBadge.style.background = '';
+            }
+          }, 2000);
         } else if (msg.includes('Движение')) {
           statusBadge.style.background = '#da3633';
         } else {

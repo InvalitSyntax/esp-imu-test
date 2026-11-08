@@ -76,7 +76,7 @@ void calibrate() {
   while (!calibrated) {
     float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
     float minZ = 1e9f, maxZ = -1e9f;
-    const int SAMPLES = 600;
+    const int SAMPLES = 400;
 
     for (int i = 0; i < SAMPLES; i++) {
       int16_t gX, gY, gZ, aX, aY, aZ;
@@ -92,11 +92,11 @@ void calibrate() {
         if (gz < minZ) minZ = gz;
         if (gz > maxZ) maxZ = gz;
       }
-      delay(3);
+      delay(2);
     }
 
-    // Если размах шума по Z меньше 0.04 рад/с (~2.3 dps), плата действительно неподвижна
-    if ((maxZ - minZ) < 0.04f) {
+    // Допуск по шуму Z: 0.08 рад/с (~4.6 dps) - мягкий порог для устойчивой калибровки
+    if ((maxZ - minZ) < 0.08f) {
       gyroBiasX = sumX / SAMPLES;
       gyroBiasY = sumY / SAMPLES;
       gyroBiasZ = sumZ / SAMPLES;
@@ -106,8 +106,8 @@ void calibrate() {
                     gyroBiasY * (180.0f / M_PI),
                     gyroBiasZ * (180.0f / M_PI));
     } else {
-      Serial.println(F("[CALIB] Движение обнаружено! Повторная попытка через 500 мс..."));
-      delay(500);
+      Serial.println(F("[CALIB] Движение обнаружено! Повтор через 100 мс..."));
+      delay(100);
     }
   }
 
