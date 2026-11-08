@@ -82,7 +82,7 @@ bool readSensorsRawData(int16_t &gX, int16_t &gY, int16_t &gZ, int16_t &aX, int1
   return false;
 }
 
-// Прецизионная калибровка нуля гироскопа и вектора гравитации
+// Прецизионная калибровка нуля гироскопа и аппаратного нуля акселерометра
 void calibrate() {
   Serial.println(F("[CALIB] Калибровка гироскопа и акселерометра... Держите плату неподвижно!"));
 
@@ -91,7 +91,7 @@ void calibrate() {
     float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
     float sumAx = 0.0f, sumAy = 0.0f, sumAz = 0.0f;
     float minZ = 1e9f, maxZ = -1e9f;
-    const int SAMPLES = 400;
+    const int SAMPLES = 350;
 
     for (int i = 0; i < SAMPLES; i++) {
       int16_t gX, gY, gZ, aX, aY, aZ;
@@ -114,7 +114,7 @@ void calibrate() {
       delay(2);
     }
 
-    // Допуск по шуму Z: 0.08 рад/с (~4.6 dps)
+    // Допуск по шуму гироскопа Z: 0.08 рад/с (~4.6 dps)
     if ((maxZ - minZ) < 0.08f) {
       gyroBiasX = sumX / SAMPLES;
       gyroBiasY = sumY / SAMPLES;
@@ -124,26 +124,84 @@ void calibrate() {
       float meanAy = sumAy / SAMPLES;
       float meanAz = sumAz / SAMPLES;
       gravityMag = sqrtf(meanAx * meanAx + meanAy * meanAy + meanAz * meanAz);
-      if (gravityMag < 0.8f || gravityMag > 1.2f) gravityMag = 1.0f;
+      if (gravityMag < 0.7f || gravityMag > 1.3f) gravityMag = 1.0f;
+
+      // 1. Инициализация кватерниона Q начальным пространственным наклоном платы на столе
+      // Оси фильтра: a1 = -ay, a2 = ax, a3 = az
+      float a1_init = -meanAy / gravityMag;
+      float a2_init =  meanAx / gravityMag;
+      float a3_init =  meanAz / gravityMag;
+
+      float pitch_init = atan2f(-a1_init, sqrtf(a2_init * a2_init + a3_init * a3_init));
+      float roll_init  = atan2f(a2_init, a3_init);
+      float yaw_init   = 0.0f;
+
+      float cp = cosf(pitch_init * 0.5f);
+      float sp = sinf(pitch_init * 0.5f);
+      float cr = cosf(roll_init * 0.5f);
+      float sr = sinf(roll_init * 0.5f);
+
+      q0 = cr * cp;
+      q1 = cr * sp; // pitch
+      q2 = sr * cp; // roll
+      q3 = -sr * sp;
+
+      float qNorm = 1.0f / sqrtf(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+      q0 *= qNorm; q1 *= qNorm; q2 *= qNorm; q3 *= qNorm;
+
+      // 2. Калибровка нуля акселерометра в мире (100 быстрых замеров):
+      // Находим истинный остаточный аппаратный bias, чтобы в покое было строго 0 см/с^2!
+      float sumLinX = 0.0f, sumLinY = 0.0f, sumLinZ = 0.0f;
+      for (int k = 0; k < 100; k++) {
+        int16_t gX, gY, gZ, aX, aY, aZ;
+        if (readSensorsRawData(gX, gY, gZ, aX, aY, aZ)) {
+          float a1 = -(aY * ACCEL_SCALE_G);
+          float a2 =  (aX * ACCEL_SCALE_G);
+          float a3 =  (aZ * ACCEL_SCALE_G);
+
+          float q0q0 = q0*q0, q1q1 = q1*q1, q2q2 = q2*q2, q3q3 = q3*q3;
+          float r11 = q0q0 + q1q1 - q2q2 - q3q3;
+          float r12 = 2.0f * (q1 * q2 - q0 * q3);
+          float r13 = 2.0f * (q1 * q3 + q0 * q2);
+
+          float r21 = 2.0f * (q1 * q2 + q0 * q3);
+          float r22 = q0q0 - q1q1 + q2q2 - q3q3;
+          float r23 = 2.0f * (q2 * q3 - q0 * q1);
+
+          float r31 = 2.0f * (q1 * q3 - q0 * q2);
+          float r32 = 2.0f * (q2 * q3 + q0 * q1);
+          float r33 = q0q0 - q1q1 - q2q2 + q3q3;
+
+          float awx = r11 * a1 + r12 * a2 + r13 * a3;
+          float awy = r21 * a1 + r22 * a2 + r23 * a3;
+          float awz = r31 * a1 + r32 * a2 + r33 * a3;
+
+          sumLinX += awx * 980.665f;
+          sumLinY += awy * 980.665f;
+          sumLinZ += (awz - gravityMag) * 980.665f;
+        }
+        delay(2);
+      }
+      accelBiasX = sumLinX / 100.0f;
+      accelBiasY = sumLinY / 100.0f;
+      accelBiasZ = sumLinZ / 100.0f;
 
       calibrated = true;
-      Serial.printf("[CALIB] Успех! Bias (dps): X=%.2f, Y=%.2f, Z=%.2f | G=%.3fg\n",
+      Serial.printf("[CALIB] Успех! Gyro Bias: X=%.2f, Y=%.2f, Z=%.2f dps | Acc Bias: X=%.1f, Y=%.1f, Z=%.1f cm/s2\n",
                     gyroBiasX * (180.0f / M_PI),
                     gyroBiasY * (180.0f / M_PI),
                     gyroBiasZ * (180.0f / M_PI),
-                    gravityMag);
+                    accelBiasX, accelBiasY, accelBiasZ);
     } else {
       Serial.println(F("[CALIB] Движение обнаружено! Повтор через 100 мс..."));
       delay(100);
     }
   }
 
-  q0 = 1.0f; q1 = 0.0f; q2 = 0.0f; q3 = 0.0f;
   lpf_gx = 0.0f; lpf_gy = 0.0f; lpf_gz = 0.0f;
 
   posX = 0.0f; posY = 0.0f; posZ = 0.0f;
   velX = 0.0f; velY = 0.0f; velZ = 0.0f;
-  accelBiasX = 0.0f; accelBiasY = 0.0f; accelBiasZ = 0.0f;
   restCounter = 20;
 }
 
@@ -244,7 +302,6 @@ void loop() {
     } else if (cmd == 'c' || cmd == 'C') {
       calibrate();
     } else if (cmd == 'r' || cmd == 'R' || cmd == '0') {
-      // Сброс координат позиции и скорости в ноль
       posX = 0.0f; posY = 0.0f; posZ = 0.0f;
       velX = 0.0f; velY = 0.0f; velZ = 0.0f;
     }
@@ -257,12 +314,10 @@ void loop() {
 
   int16_t gX, gY, gZ, aX, aY, aZ;
   if (readSensorsRawData(gX, gY, gZ, aX, aY, aZ)) {
-    // Вычитание смещения гироскопа (в рад/с)
     float raw_gx = (gX * GYRO_SCALE_RAD) - gyroBiasX;
     float raw_gy = (gY * GYRO_SCALE_RAD) - gyroBiasY;
     float raw_gz = (gZ * GYRO_SCALE_RAD) - gyroBiasZ;
 
-    // Акселерометр в g
     float raw_ax = aX * ACCEL_SCALE_G;
     float raw_ay = aY * ACCEL_SCALE_G;
     float raw_az = aZ * ACCEL_SCALE_G;
@@ -273,8 +328,6 @@ void loop() {
     lpf_gy += alpha * (raw_gy - lpf_gy);
     lpf_gz += alpha * (raw_gz - lpf_gz);
 
-    // Согласование осей фильтра:
-    // a1 = Вперед (-raw_ay), a2 = Вправо (raw_ax), a3 = Вверх (raw_az)
     float a1 = -raw_ay;
     float a2 =  raw_ax;
     float a3 =  raw_az;
@@ -286,7 +339,7 @@ void loop() {
     // -------------------------------------------------------------
     // ИНЕРЦИАЛЬНАЯ НАВИГАЦИЯ (SINS): ДВОЙНОЕ ИНТЕГРИРОВАНИЕ В МИРЕ
     // -------------------------------------------------------------
-    // 1. Поворот вектора ускорения из корпуса в мировую систему по кватерниону Q:
+    // 1. Поворот вектора ускорения в мировую систему по кватерниону Q
     float q0q0 = q0 * q0;
     float q1q1 = q1 * q1;
     float q2q2 = q2 * q2;
@@ -308,66 +361,67 @@ void loop() {
     float a_world_y = r21 * a1 + r22 * a2 + r23 * a3;
     float a_world_z = r31 * a1 + r32 * a2 + r33 * a3;
 
-    // 2. Вычитание мировой гравитации (по оси Z вверх)
+    // 2. Линейное ускорение (вычитаем вектор силы тяжести)
     float a_lin_x = a_world_x;
     float a_lin_y = a_world_y;
     float a_lin_z = a_world_z - gravityMag;
 
-    // 3. Перевод в см/с^2 (1g = 980.665 см/с^2)
+    // 3. Перевод в см/с^2 с вычетом откалиброванного bias
     const float G_TO_CMS2 = 980.665f;
-    float linAccX = a_lin_x * G_TO_CMS2 - accelBiasX;
-    float linAccY = a_lin_y * G_TO_CMS2 - accelBiasY;
-    float linAccZ = a_lin_z * G_TO_CMS2 - accelBiasZ;
+    float linAccX = (a_lin_x * G_TO_CMS2) - accelBiasX;
+    float linAccY = (a_lin_y * G_TO_CMS2) - accelBiasY;
+    float linAccZ = (a_lin_z * G_TO_CMS2) - accelBiasZ;
 
-    // Мертвая зона по шуму АЦП (~6-8 см/с^2)
-    if (fabsf(linAccX) < 7.0f) linAccX = 0.0f;
-    if (fabsf(linAccY) < 7.0f) linAccY = 0.0f;
-    if (fabsf(linAccZ) < 8.5f) linAccZ = 0.0f;
+    // Мертвая зона микрошума (~8 см/с^2 ≈ 0.008g)
+    if (fabsf(linAccX) < 8.0f) linAccX = 0.0f;
+    if (fabsf(linAccY) < 8.0f) linAccY = 0.0f;
+    if (fabsf(linAccZ) < 9.5f) linAccZ = 0.0f;
 
-    // 4. Детектор покоя (Zero Velocity Detection - ZUPT)
+    // 4. ДЕТЕКТОР ПОКОЯ (ZERO VELOCITY UPDATE - ZUPT)
     float gyroSpeed = sqrtf(g1 * g1 + g2 * g2 + g3 * g3);
     float linAccMag = sqrtf(linAccX * linAccX + linAccY * linAccY + linAccZ * linAccZ);
 
-    bool isRest = (gyroSpeed < 0.025f) && (linAccMag < 14.0f);
+    // Если угловая скорость близка к нулю (< ~2 dps) и нет резких линейных ускорений (< 25 см/с^2)
+    bool isRest = (gyroSpeed < 0.035f) && (linAccMag < 25.0f);
+
     if (isRest) {
-      if (restCounter < 25) restCounter++;
+      if (restCounter < 20) restCounter++;
     } else {
       restCounter = 0;
     }
 
-    if (restCounter >= 10) {
-      // ПОКОЙ: скорость строго обнуляется, устраняя экспоненциальный дрейф позиции
+    if (restCounter >= 6) {
+      // ПОКОЙ: скорость СТРОГО обнуляется, исключая любой дрейф позиции
       velX = 0.0f;
       velY = 0.0f;
       velZ = 0.0f;
 
-      // Мягкая подстройка смещения нуля гироскопа и акселерометра в покое
+      // Мягкая адаптация аппаратного смещения нуля акселерометра в покое
+      accelBiasX += linAccX * 0.005f;
+      accelBiasY += linAccY * 0.005f;
+      accelBiasZ += linAccZ * 0.005f;
+
       gyroBiasX += raw_gx * 0.0003f;
       gyroBiasY += raw_gy * 0.0003f;
       gyroBiasZ += raw_gz * 0.0003f;
 
-      accelBiasX += a_lin_x * G_TO_CMS2 * 0.002f;
-      accelBiasY += a_lin_y * G_TO_CMS2 * 0.002f;
-      accelBiasZ += a_lin_z * G_TO_CMS2 * 0.002f;
-
       g1 = 0.0f; g2 = 0.0f; g3 = 0.0f;
     } else {
-      // ДВИЖЕНИЕ: интегрируем ускорение в скорость и перемещение
+      // ДВИЖЕНИЕ: интегрируем скорость и позицию
       velX += linAccX * dt;
       velY += linAccY * dt;
       velZ += linAccZ * dt;
 
-      // Мягкое экспоненциальное затухание скорости (damping), стабилизирующее свободный полет
-      velX *= (1.0f - 0.35f * dt);
-      velY *= (1.0f - 0.35f * dt);
-      velZ *= (1.0f - 0.35f * dt);
+      // Стабилизирующее затухание скорости (decay), чтобы датчик останавливался при прекращении ускорения
+      velX *= (1.0f - 0.5f * dt);
+      velY *= (1.0f - 0.5f * dt);
+      velZ *= (1.0f - 0.5f * dt);
 
       posX += velX * dt;
       posY += velY * dt;
       posZ += velZ * dt;
     }
 
-    // Обновление ориентации Mahony AHRS
     mahonyAHRSUpdate(g1, g2, g3, a1, a2, a3, dt);
 
     last_rax = raw_ax;
